@@ -218,6 +218,10 @@ button{font:inherit;color:inherit}
 /* iPhoneで下部ボタンの表示が更新されない不具合への対策 */
 #quiz .foot{-webkit-transform:translateZ(0);transform:translateZ(0)}
 .appver{margin:18px 0 0;font-size:.75rem;color:var(--muted)}
+/* 全部の回の苦手をまとめて解く */
+.wa{display:grid;gap:6px;margin:16px 0 0}
+.wa:empty{display:none}
+.wa-note{margin:0;color:var(--muted);font-size:.85rem}
 </style>
 </head>
 <body>
@@ -226,6 +230,7 @@ button{font:inherit;color:inherit}
   <h1>化学基礎</h1>
   <p class="sub">高卒認定試験　過去問　令和2〜7年度・全12回</p>
   <div id="lapAll"></div>
+  <div class="wa" id="waBox"></div>
   <div class="years" id="years" aria-label="回の一覧"></div>
   <p class="legend">回を選ぶと、その回の問題一覧が開きます。赤い点は苦手な問題が残っている回、下の青い線は解いた問題の割合です。</p>
   <p class="sync" data-sync role="status"></p>
@@ -448,6 +453,7 @@ function renderLapAll(){
 }
 function renderTop(){
   renderLapAll();
+  renderWA();
   const box = $("years"); box.textContent = "";
   for (const y of YEARS){
     const row = el("div", { class: "kai-row" });
@@ -663,6 +669,7 @@ $("weakBtn").addEventListener("click", () => {
   $("weakmsg").hidden = false; save(); refreshWeakBtn();
 });
 function next(){
+  if (inWA()){ waNext(); return; }
   st.run.i++; save();
   if (st.run.i < st.run.ids.length){ renderQ(); window.scrollTo(0, 0); }
   else finish();
@@ -715,8 +722,84 @@ let zoomFrom = null;
 function openZoom(src, alt){ zoomFrom = document.activeElement; setImg("zimg", src, alt); $("zoom").hidden = false; $("zclose").focus(); }
 function closeZoom(){ $("zoom").hidden = true; if (zoomFrom && zoomFrom.focus) zoomFrom.focus(); }
 
+/* ---------- 全部の回の苦手をまとめて解く ---------- */
+// 進み具合は記録（KEY）とは別のキーに置く（記録の形・バックアップの形式は変えない）。
+// 出題中の st は「その回の記録を引き継いだ別オブジェクト」で、run だけまとめ解き用にする。
+// こうすると results・weak はその回の記録に書き込まれ、その回の「続きから」（run）はそのまま残る。
+const WAKEY = "kounin-chemistry-weakall-v1";
+let WA = null;   // { items: [[回, 問題ID], …], i: 何問目か, res: [{ e: 得点, m: 配点, c: 克服した, a: 苦手に追加した }, …] }
+try {
+  WA = JSON.parse(localStorage.getItem(WAKEY) || "null");
+  if (!WA || !Array.isArray(WA.items) || !Array.isArray(WA.res) || !(WA.i < WA.items.length) || !WA.items.every(([k, id]) => EX[k] && EX[k].byId[id])) WA = null;
+} catch (e){ WA = null; }
+function waSave(){ try { if (WA) localStorage.setItem(WAKEY, JSON.stringify(WA)); else localStorage.removeItem(WAKEY); } catch (e) {} }
+const inWA = () => !!(st && st.run && st.run.mode === "weakall");
+// 全部の回の苦手：間違えた回数の多い順（同じなら克服に近くないもの、回の一覧の順、問題の順）
+function allWeak(){
+  const list = [];
+  YEARS.flatMap(y => y.keys).forEach((k, n) => {
+    const w = (S.exams[k] && S.exams[k].weak) || {}, E = EX[k];
+    for (const id of Object.keys(w)) if (E.byId[id]) list.push({ k, id, w: w[id], o: n * 1000 + E.Q.indexOf(E.byId[id]) });
+  });
+  return list.sort((a, b) => (b.w.miss - a.w.miss) || (a.w.streak - b.w.streak) || (a.o - b.o)).map(x => [x.k, x.id]);
+}
+function renderWA(){
+  const box = $("waBox"); box.textContent = "";
+  const n = allWeak().length, left = WA ? WA.items.length - WA.i : 0;
+  if (!n && !left) return;
+  if (left) box.append(el("button", { class: "btn btn-main", disabled: ready ? null : "", onclick: waShow }, `苦手のまとめ解きを続ける（残り${left}問）`));
+  if (n) box.append(el("button", { class: left ? "linkbtn" : "btn btn-sub", disabled: ready ? null : "", onclick: startWeakAll }, left ? `はじめからやり直す（今の苦手 ${n}問）` : `苦手をまとめて解く（全部の回で${n}問）`));
+  box.append(el("p", { class: "wa-note", text: "全部の回の苦手な問題を、間違えた回数の多い順に続けて解きます。" }));
+}
+function startWeakAll(){
+  const items = allWeak(); if (!items.length) return;
+  WA = { items, i: 0, res: [] }; waSave(); waShow();
+}
+function waShow(){
+  const [k] = WA.items[WA.i], nx = WA.items[WA.i + 1];
+  cur = k; Q = EX[k].Q; byId = EX[k].byId;
+  preload(k); if (nx) preload(nx[0]);   // 回を開いたときと同じく、その回（と次の問題の回）の画像を先読み
+  st = Object.create(ex(k));
+  st.run = { ids: WA.items.map(x => x[1]), i: WA.i, mode: "weakall", earned: 0, max: 0, log: {}, added: [], cleared: [] };
+  show("quiz"); renderQ();
+}
+// 答え合わせした問題の結果を残して、次の問題へ進める
+function waRecord(){
+  const r = st.run;
+  WA.res[WA.i] = { e: r.log[r.ids[r.i]] || 0, m: r.max, c: r.cleared.length ? 1 : 0, a: r.added.length ? 1 : 0 };
+  WA.i++; waSave();
+}
+function waNext(){ waRecord(); if (WA.i < WA.items.length) waShow(); else waFinish(); }
+function waLeave(){
+  if (checked){ checked = false; waRecord(); if (WA.i >= WA.items.length){ waFinish(); return; } }
+  renderTop(); show("top");
+}
+function waFinish(){
+  const done = WA.items.map((it, n) => [it, WA.res[n]]).filter(x => x[1]);
+  WA = null; waSave(); st.run = null;
+  const earned = done.reduce((s, x) => s + x[1].e, 0), max = done.reduce((s, x) => s + x[1].m, 0);
+  const a = done.filter(x => x[1].a).length, c = done.filter(x => x[1].c).length;
+  $("rexam").textContent = "全部の回";
+  $("rtitle").textContent = "苦手のまとめ解きの結果";
+  $("rlap").textContent = "";
+  $("rsum").textContent = [a ? `苦手に追加 ${a}問` : "", c ? `苦手を克服 ${c}問` : ""].filter(Boolean).join("　"); $("rsum").hidden = !(a || c);
+  $("rscore").textContent = String(earned);
+  $("rscore").append(el("small", { text: `/ ${max}点` }));
+  const list = $("rlist"); list.textContent = "";
+  for (const [[k, id], r] of done){
+    const q = EX[k].byId[id], m = el("span", { class: "m" }, markSvg(r.e === r.m, true)); if (r.e !== r.m) m.append(`${r.e} / ${r.m}点`);
+    list.append(el("li", {}, el("span", {}, `${EX[k].title}　${qname(q)}`, el("span", { class: "no", text: `解答番号 ${q.n}` })), m));
+  }
+  const acts = $("rActions"); acts.textContent = "";
+  const n = allWeak().length;
+  if (n) acts.append(el("button", { class: "btn btn-main", onclick: startWeakAll }, `もう一度まとめて解く（${n}問）`));
+  acts.append(el("button", { class: n ? "btn btn-sub" : "btn btn-main", onclick: () => { renderTop(); show("top"); } }, "回の一覧へ"));
+  show("result");
+}
+
 $("mainBtn").addEventListener("click", () => { if (!checked) check(); else next(); });
 $("toHome").addEventListener("click", () => {
+  if (inWA()){ waLeave(); return; }
   if (checked){ checked = false; st.run.i++; save(); if (st.run.i >= st.run.ids.length){ finish(); return; } }
   renderHome(); show("home");
 });
@@ -937,7 +1020,7 @@ initStore();
     let d; try { d = JSON.parse(await f.text()); } catch (err) { msg("ファイルを読み込めませんでした。"); return; }
     if (!d || d.app !== APP || !d.state || typeof d.state !== "object"){ msg(`${NAME}のバックアップファイルではないようです。`); return; }
     if (!confirm("今の記録を、このファイルの記録で置き換えますか？")) return;
-    try { S = normAll(d.state); localSave(); renderTop(); msg("読み込みました。"); }
+    try { S = normAll(d.state); localSave(); WA = null; waSave(); renderTop(); msg("読み込みました。"); }
     catch (err) { msg("ファイルを読み込めませんでした。"); }
   });
 })();
@@ -1077,7 +1160,7 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-24 版5"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-24 版6"; top.append(p); }
 })();
 </script>
 </body>
