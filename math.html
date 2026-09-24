@@ -924,5 +924,103 @@ initStore();
   });
 })();
 </script>
+<style>
+.expl{margin:16px 0 0;padding:14px 16px;background:#fff;border:1px solid var(--line);border-left:4px solid var(--sheet);border-radius:8px;color:#1D232A}
+.expl h3{margin:0 0 6px;font-size:1rem;color:#2E5E99}
+.expl .tx{white-space:pre-wrap;line-height:1.85;font-size:.95rem;margin:0}
+.expl .none{margin:0;color:#5B6674;font-size:.9rem}
+.expl .ask{display:grid;gap:6px;margin-top:12px}
+.expl .ask .btn{width:100%;min-height:48px;font-size:1rem}
+.expl .ask .linkbtn{justify-self:start;color:#5B6674}
+.expl .askmsg{margin:4px 0 0;font-size:.85rem;color:#5B6674}
+</style>
+<script>
+(() => {
+  const SUBJ = "math", SUBJ_NAME = "数学";
+  const CIRC = ["⓪","①","②","③","④","⑤","⑥","⑦","⑧","⑨"];
+  let file = null, filePromise = null;
+  const box = document.createElement("section");
+  box.className = "expl"; box.id = "expl"; box.hidden = true; box.setAttribute("aria-live", "polite");
+  const sheet = document.getElementById("sheet"); sheet.parentNode.insertBefore(box, sheet.nextSibling);
+  const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const qid = () => { try { return st.run.ids[st.run.i]; } catch (e) { return null; } };
+
+  // 質問文をつくる
+  function prompt(){
+    const q = byId[qid()], E = EX[cur];
+    const where = q.blanks ? `${E.title} ${qname(q)}` : `${E.title} ${qname(q)}（解答番号 ${q.n}）`;
+    let right, mine;
+    if (q.blanks){
+      right = q.blanks.map(k => `${k}＝${q.ans[k]}`).join("、");
+      if (q.unordered && q.unordered.length) right += `（${q.unordered.map(u => u.join("・")).join("、")}は順不同）`;
+      mine = q.blanks.map(k => `${k}＝${sel && sel[k] != null ? sel[k] : "？"}`).join("、");
+    } else {
+      right = CIRC[q.ans] || String(q.ans);
+      mine = sel != null ? (CIRC[sel] || String(sel)) : "？";
+    }
+    const same = mine === right || (q.blanks && q.blanks.every(k => sel && sel[k] === q.ans[k]));
+    return `高卒認定試験「${SUBJ_NAME}」${where}の問題です（画像を添付しています）。\n正解：${right}\n私の答え：${mine}${same ? "（正解）" : ""}\n` +
+      (same ? "高校生にもわかるように、考え方と解き方を順番に解説してください。"
+            : "高校生にもわかるように、考え方と解き方を順番に解説してください。私の答えのどこが違うのかも教えてください。");
+  }
+  // 問題の画像（共通の文章・図も含む）を1枚にまとめる
+  function makeFile(){
+    const imgs = [...document.querySelectorAll("#quiz #paper img, #quiz #qbody img")].filter(i => i.naturalWidth);
+    if (!imgs.length) return Promise.resolve(null);
+    const gap = 24, W0 = Math.max(...imgs.map(i => i.naturalWidth));
+    const H0 = imgs.reduce((s, i) => s + i.naturalHeight, 0) + gap * (imgs.length - 1);
+    const k = Math.min(1, Math.sqrt(12e6 / (W0 * H0)));
+    const c = document.createElement("canvas"); c.width = Math.round(W0 * k); c.height = Math.round(H0 * k);
+    const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+    let y = 0;
+    for (const i of imgs){ x.drawImage(i, 0, y, i.naturalWidth * k, i.naturalHeight * k); y += (i.naturalHeight + gap) * k; }
+    const q = byId[qid()];
+    const name = `${SUBJ}-${cur}-${String(q.id).replace(/[^0-9a-z-]/gi, "_")}.png`;
+    return new Promise(r => c.toBlob(b => r(b ? new File([b], name, { type: "image/png" }) : null), "image/png"));
+  }
+  function msg(t){ const m = box.querySelector(".askmsg"); if (m) m.textContent = t; }
+  async function copy(t){
+    try { await navigator.clipboard.writeText(t); return true; }
+    catch (e){
+      const ta = mk("textarea"); ta.value = t; ta.setAttribute("readonly", ""); ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.append(ta); ta.select(); let ok = false; try { ok = document.execCommand("copy"); } catch (x) {} ta.remove(); return ok;
+    }
+  }
+  async function ask(){
+    const text = prompt();
+    const f = file || await filePromise;
+    if (f && navigator.canShare && navigator.canShare({ files: [f] })){
+      try { await navigator.share({ files: [f], text }); msg("共有メニューでClaudeを選んでください。質問文が入っていなければ「質問文をコピー」で貼り付けられます。"); }
+      catch (e){ if (e && e.name !== "AbortError") msg("共有できませんでした。「質問文をコピー」を使ってください。"); }
+      return;
+    }
+    // 共有に対応していないとき：画像を保存し、質問文をコピー
+    if (f){ const a = mk("a"); a.href = URL.createObjectURL(f); a.download = f.name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
+    const ok = await copy(text);
+    msg(`${f ? "問題の画像を保存し、" : ""}${ok ? "質問文をコピーしました。" : ""}Claudeで画像を添付して、質問文を貼り付けて送ってください。`);
+  }
+  function show(){
+    const ex = cur, id = qid(); if (!ex || !id) return;
+    box.textContent = ""; box.hidden = false;
+    box.append(mk("h3", "", "解説"));
+    file = null; filePromise = makeFile().then(f => (file = f));
+    box.append(mk("p", "none", "問題の画像と正解をClaudeに送って、解説してもらえます。"));
+    const wrap = mk("div", "ask");
+    const b1 = mk("button", "btn btn-main", "Claudeに解説してもらう"); b1.type = "button";
+    b1.addEventListener("click", ask);
+    const b2 = mk("button", "linkbtn", "質問文をコピー"); b2.type = "button";
+    b2.addEventListener("click", async () => { msg(await copy(prompt()) ? "質問文をコピーしました。" : "コピーできませんでした。"); });
+    wrap.append(b1, b2, mk("p", "askmsg", ""));
+    box.append(wrap);
+  }
+  if (typeof renderQ === "function"){
+    const orig = renderQ;
+    renderQ = function(){ const r = orig.apply(this, arguments); box.hidden = true; box.textContent = ""; file = null; filePromise = null; return r; };
+  }
+  document.getElementById("mainBtn").addEventListener("click", () => { if (checked && box.hidden) show(); });
+})();
+</script>
+
+
 </body>
 </html>
