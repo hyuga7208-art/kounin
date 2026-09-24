@@ -187,6 +187,26 @@ button{font:inherit;color:inherit}
 .bk-note{margin:4px 0 0;color:var(--muted);font-size:.88rem}
 .bk-btns{display:grid;gap:10px;margin-top:14px}
 .bk-msg{margin:10px 0 0;font-size:.88rem;min-height:1.4em}
+
+/* ---------- 周回 ---------- */
+.lapall{margin:22px 0 4px;padding:14px 16px;background:var(--paper);border:1px solid var(--line);border-radius:10px;color:#1D232A}
+.la-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.la-head b{font-size:.95rem}
+.la-head span{font-family:var(--num);font-weight:700;font-size:1.5rem;color:#2E5E99}
+.la-bar{display:block;height:8px;border-radius:4px;background:#E4ECF6;margin-top:8px;overflow:hidden}
+.la-bar i{display:block;height:100%;background:#3A77C0;border-radius:4px}
+.la-meta{margin:8px 0 0;font-size:.85rem;color:#5B6674;display:flex;flex-wrap:wrap;gap:2px 18px}
+.laps{margin:18px 0 0;padding-top:12px;border-top:1px solid var(--line)}
+.laps h3{margin:0 0 6px;font-size:1rem}
+.lap{display:grid;grid-template-columns:4.2em 1fr 4.4em;align-items:center;gap:8px;padding:4px 0;font-size:.9rem}
+.lap-n{color:var(--muted)}
+.lap-bar{height:10px;border-radius:5px;background:var(--sheet-soft);overflow:hidden}
+.lap-bar i{display:block;height:100%;background:var(--sheet);border-radius:5px}
+.lap-s{text-align:right;font-family:var(--num);font-weight:700}
+.lap.last .lap-n{color:var(--ink);font-weight:700}
+.lap.best .lap-s{color:var(--red)}
+.lap-note{margin:4px 0 0;font-size:.8rem;color:var(--muted)}
+.rlap-msg{margin:8px 0 0;font-weight:700;color:var(--red)}
 </style>
 </head>
 <body>
@@ -194,6 +214,7 @@ button{font:inherit;color:inherit}
 <main id="top" class="wrap home">
   <h1>物理基礎</h1>
   <p class="sub">高卒認定試験　過去問　令和2〜7年度・全12回</p>
+  <div id="lapAll"></div>
   <div class="years" id="years" aria-label="回の一覧"></div>
   <p class="legend">回を選ぶと、その回の問題一覧が開きます。赤い点は苦手な問題が残っている回、下の青い線は解いた問題の割合です。</p>
   <p class="sync" data-sync role="status"></p>
@@ -260,6 +281,7 @@ button{font:inherit;color:inherit}
   <h2 id="rtitle">結果</h2>
   <p class="score" id="rscore"></p>
   <p class="rsum" id="rsum" hidden></p>
+  <div id="rlap"></div>
   <ul class="rlist" id="rlist"></ul>
   <div class="actions" id="rActions"></div>
 </main>
@@ -308,6 +330,7 @@ function norm(x){
   const s = Object.assign(fresh(), src);
   if (!s.results || typeof s.results !== "object") s.results = {};
   if (!s.weak || typeof s.weak !== "object") s.weak = {};
+  if (!Array.isArray(s.laps)) s.laps = (s.last && typeof s.last.earned === "number") ? [{ score: s.last.earned, max: s.last.max, date: null }] : [];
   return s;
 }
 function normAll(x){
@@ -393,7 +416,37 @@ function el(tag, attrs = {}, ...kids){
 function show(id){ for (const s of ["top","home","quiz","result"]) $(s).hidden = s !== id; window.scrollTo(0, 0); }
 
 /* ---------- 回の一覧 ---------- */
+
+function lapsOf(s){ return (s && Array.isArray(s.laps)) ? s.laps : []; }
+function lapBlock(laps){
+  const best = Math.max(...laps.map(l => l.score));
+  const box = el("section", { class: "laps", "aria-label": "周回の記録" }, el("h3", { text: "周回の記録" }));
+  const shown = laps.slice(-8), off = laps.length - shown.length;
+  shown.forEach((l, i) => {
+    const n = off + i + 1;
+    box.append(el("div", { class: "lap" + (l.score === best ? " best" : "") + (n === laps.length ? " last" : "") },
+      el("span", { class: "lap-n", text: `${n}周目` }),
+      el("span", { class: "lap-bar", "aria-hidden": "true" }, el("i", { style: `width:${Math.round(l.score / (l.max || 100) * 100)}%` })),
+      el("span", { class: "lap-s", text: (l.score === best ? "★" : "") + `${l.score}点` })));
+  });
+  if (off) box.append(el("p", { class: "lap-note", text: `最近の${shown.length}周を表示しています（全${laps.length}周）` }));
+  box.append(el("p", { class: "lap-note", text: "★は自己ベストです。「はじめから」通して20問解くと1周になります。" }));
+  return box;
+}
+function renderLapAll(){
+  const box = document.getElementById("lapAll"); if (!box) return;
+  const keys = YEARS.flatMap(y => y.keys);
+  const counts = keys.map(k => lapsOf(S.exams[k]).length);
+  const L = Math.min(...counts) + 1, cleared = counts.filter(c => c >= L).length;
+  const full = keys.filter(k => lapsOf(S.exams[k]).some(l => l.score === l.max)).length;
+  box.textContent = "";
+  box.append(el("section", { class: "lapall", "aria-label": "全体の周回" },
+    el("div", { class: "la-head" }, el("b", { text: "全体の周回" }), el("span", { text: `${L}周目` })),
+    el("span", { class: "la-bar", "aria-hidden": "true" }, el("i", { style: `width:${Math.round(cleared / keys.length * 100)}%` })),
+    el("p", { class: "la-meta" }, el("span", { text: `この周でクリアした回 ${cleared} / ${keys.length}` }), el("span", { text: `満点をとった回 ${full} / ${keys.length}` }))));
+}
 function renderTop(){
+  renderLapAll();
   const box = $("years"); box.textContent = "";
   for (const y of YEARS){
     const row = el("div", { class: "kai-row" });
@@ -402,8 +455,9 @@ function renderTop(){
       const done = E.Q.filter(q => s.results[q.id]).length;
       const wk = Object.keys(s.weak || {}).filter(id => E.byId[id]).length;
       const running = s.run && s.run.i < s.run.ids.length;
-      const meta = s.last ? `前回 ${s.last.earned}点` : done ? `${done} / ${E.Q.length}問 解いた` : "未着手";
-      const sub = [running ? "途中" : "", wk ? `苦手 ${wk}問` : ""].filter(Boolean).join("・");
+      const LP = lapsOf(s), best = LP.length ? Math.max(...LP.map(l => l.score)) : 0;
+      const meta = LP.length ? `${LP.length}周・最高${best}点` : done ? `${done} / ${E.Q.length}問 解いた` : "未着手";
+      const sub = [LP.some(l => l.score === l.max) ? "★満点" : "", running ? "途中" : "", wk ? `苦手 ${wk}問` : ""].filter(Boolean).join("・");
       row.append(el("button", { class: "kai" + (wk ? " weak" : ""), disabled: ready ? null : "", "aria-label": `${E.title}　${meta}${sub ? "　" + sub : ""}`, onclick: () => openExam(k) },
         el("span", { class: "kai-no", text: E.kai }),
         el("span", { class: "kai-meta", text: meta }),
@@ -442,12 +496,12 @@ function renderHome(){
   if (run && run.i < run.ids.length && byId[run.ids[run.i]]){
     const q = byId[run.ids[run.i]];
     acts.append(el("button", { class: "btn btn-main", onclick: () => { show("quiz"); renderQ(); } }, `続きから（${qname(q)}）`));
-    acts.append(el("button", { class: "btn btn-sub", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, "はじめから解く"));
+    acts.append(el("button", { class: "btn btn-sub", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, lapsOf(st).length ? `${lapsOf(st).length + 1}周目を始める` : "はじめから解く"));
   } else {
-    acts.append(el("button", { class: "btn btn-main", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, "はじめから解く"));
+    acts.append(el("button", { class: "btn btn-main", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, lapsOf(st).length ? `${lapsOf(st).length + 1}周目を始める` : "はじめから解く"));
   }
   if (weak.length) acts.append(el("button", { class: "btn btn-sub", onclick: () => startRun(weakIds(), 0, "weak") }, `苦手を解く（${weak.length}問）`));
-  if (st.last) acts.append(el("p", { class: "legend", text: `前回の得点：${st.last.earned}点 / ${st.last.max}点` }));
+  if (lapsOf(st).length) acts.append(lapBlock(lapsOf(st)));
   renderWeak();
   const hasData = Object.keys(st.results).length || Object.keys(st.weak).length || st.run;
   if (clearedMsg){ acts.append(el("p", { class: "legend", role: "status", text: "この回の記録を消しました。" })); clearedMsg = false; }
@@ -613,10 +667,27 @@ function next(){
 }
 function finish(){
   const run = st.run;
-  if (run.mode === "all" && Object.keys(run.log).length === Q.length) st.last = { earned: run.earned, max: run.max };
+  let lapInfo = null;
+  if (run.mode === "all" && Object.keys(run.log).length === Q.length){
+    st.last = { earned: run.earned, max: run.max };
+    const laps = st.laps = lapsOf(st);
+    const prevBest = laps.length ? Math.max(...laps.map(l => l.score)) : null;
+    const prev = laps.length ? laps[laps.length - 1].score : null;
+    laps.push({ score: run.earned, max: run.max, date: today() });
+    lapInfo = { n: laps.length, prev, newBest: prevBest !== null && run.earned > prevBest };
+  }
   save();
   $("rexam").textContent = EX[cur].title;
-  $("rtitle").textContent = run.mode === "weak" ? "苦手の復習結果" : "結果";
+  $("rtitle").textContent = lapInfo ? `${lapInfo.n}周目クリア` : run.mode === "weak" ? "苦手の復習結果" : "結果";
+  const rl = $("rlap"); rl.textContent = "";
+  if (lapInfo){
+    const m = [];
+    if (run.earned === run.max) m.push("満点！");
+    if (lapInfo.prev !== null){ const d = run.earned - lapInfo.prev; m.push(d > 0 ? `前の周より +${d}点` : d < 0 ? `前の周より −${-d}点` : "前の周と同じ点数"); }
+    if (lapInfo.newBest) m.push("自己ベスト更新");
+    if (m.length) rl.append(el("p", { class: "rlap-msg", text: m.join("　") }));
+    rl.append(lapBlock(st.laps));
+  }
   const sum = [];
   if (run.added && run.added.length) sum.push(`苦手に追加 ${run.added.length}問`);
   if (run.cleared && run.cleared.length) sum.push(`苦手を克服 ${run.cleared.length}問`);
