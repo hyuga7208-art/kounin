@@ -981,22 +981,42 @@ initStore();
       (same ? "高校生にもわかるように、考え方と解き方を順番に解説してください。"
             : "高校生にもわかるように、考え方と解き方を順番に解説してください。私の答えのどこが違うのかも教えてください。");
   }
-  // 問題の画像（共通の文章・図も含む）を1枚にまとめる
+  // 文字ごとに折り返す（日本語は空白で区切れないため）
+  function wrapText(font, text, maxW){
+    const m = document.createElement("canvas").getContext("2d"); m.font = font;
+    const out = [];
+    for (const para of text.split("\n")){
+      let line = "";
+      for (const ch of para){ if (line && m.measureText(line + ch).width > maxW){ out.push(line); line = ""; } line += ch; }
+      out.push(line);
+    }
+    return out;
+  }
+  // 問題の画像（共通の文章・図も含む）を1枚にまとめ、いちばん上に質問文を書き込む
+  // （共有で質問文が渡らなくても、この画像を送るだけで解説してもらえるように）
   // 画像は別ファイルなので、閉じている「文章・図」も含めて読み込み終わるのを待ってから描く
   const load = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.onerror = () => r(null); i.src = src; });
   async function makeFile(){
     const q = byId[qid()];
     const name = `${SUBJ}-${cur}-${String(q.id).replace(/[^0-9a-z-]/gi, "_")}.png`;
+    const head = prompt().replace("（画像を添付しています）", "（この下の画像）");
     const srcs = [...document.querySelectorAll("#quiz #paper img, #quiz #qbody img")].filter(i => i.getAttribute("src")).map(i => i.src);
     const imgs = (await Promise.all(srcs.map(load))).filter(i => i && i.naturalWidth);
     if (!imgs.length) return null;
     const gap = 24, W0 = Math.max(...imgs.map(i => i.naturalWidth));
-    const H0 = imgs.reduce((s, i) => s + i.naturalHeight, 0) + gap * (imgs.length - 1);
+    const fs = Math.round(W0 / 38), lh = Math.round(fs * 1.6), pad = fs;
+    const font = `bold ${fs}px "Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Meiryo","Noto Sans JP",sans-serif`;
+    const lines = wrapText(font, head, W0 - pad * 2), top = pad * 2 + lh * lines.length;
+    const H0 = top + imgs.reduce((s, i) => s + gap + i.naturalHeight, 0);
     const k = Math.min(1, Math.sqrt(12e6 / (W0 * H0)));
     const c = document.createElement("canvas"); c.width = Math.round(W0 * k); c.height = Math.round(H0 * k);
     const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
-    let y = 0;
-    for (const i of imgs){ x.drawImage(i, 0, y, i.naturalWidth * k, i.naturalHeight * k); y += (i.naturalHeight + gap) * k; }
+    x.scale(k, k);
+    x.fillStyle = "#E4EEFA"; x.fillRect(0, 0, W0, top);
+    x.fillStyle = "#1D232A"; x.font = font; x.textBaseline = "middle";
+    lines.forEach((l, n) => x.fillText(l, pad, pad + lh * n + lh / 2));
+    let y = top + gap;
+    for (const i of imgs){ x.drawImage(i, 0, y); y += i.naturalHeight + gap; }
     return new Promise(r => c.toBlob(b => r(b ? new File([b], name, { type: "image/png" }) : null), "image/png"));
   }
   function msg(t){ const m = box.querySelector(".askmsg"); if (m) m.textContent = t; }
@@ -1011,14 +1031,15 @@ initStore();
     const text = prompt();
     const f = file || await filePromise;
     if (f && navigator.canShare && navigator.canShare({ files: [f] })){
-      try { await navigator.share({ files: [f], text }); msg("共有メニューでClaudeを選んでください。質問文が入っていなければ「質問文をコピー」で貼り付けられます。"); }
+      try { await navigator.share({ files: [f], text }); msg("共有メニューでClaudeを選んで、そのまま送ってください。質問文は画像のいちばん上に書き込んであります。"); }
       catch (e){ if (e && e.name !== "AbortError") msg("共有できませんでした。「質問文をコピー」を使ってください。"); }
       return;
     }
     // 共有に対応していないとき：画像を保存し、質問文をコピー
     if (f){ const a = mk("a"); a.href = URL.createObjectURL(f); a.download = f.name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); }
     const ok = await copy(text);
-    msg(`${f ? "問題の画像を保存し、" : ""}${ok ? "質問文をコピーしました。" : ""}Claudeで画像を添付して、質問文を貼り付けて送ってください。`);
+    msg(f ? `問題の画像を保存しました${ok ? "（質問文もコピーしました）" : ""}。Claudeでこの画像を添付して送ってください。質問文は画像のいちばん上に書き込んであります。`
+            : `${ok ? "質問文をコピーしました。" : ""}Claudeで問題の画像を添付して、質問文を貼り付けて送ってください。`);
   }
   function show(){
     const ex = cur, id = qid(); if (!ex || !id) return;
@@ -1027,7 +1048,7 @@ initStore();
     // 作れなかったとき（file:// で開いたときなど）は質問文だけにする。別の問題に移ったあとで出来上がったものは使わない
     file = null;
     const p = filePromise = makeFile().catch(() => null).then(f => (filePromise === p ? (file = f) : f));
-    box.append(mk("p", "none", "問題の画像と正解をClaudeに送って、解説してもらえます。"));
+    box.append(mk("p", "none", "ボタンを押して共有メニューでClaudeを選び、そのまま送ると解説してもらえます（質問文は画像に書き込んであります）。"));
     const wrap = mk("div", "ask");
     const b1 = mk("button", "btn btn-main", "Claudeに解説してもらう"); b1.type = "button";
     b1.addEventListener("click", ask);
@@ -1056,7 +1077,7 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-24 版4"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-24 版5"; top.append(p); }
 })();
 </script>
 </body>
