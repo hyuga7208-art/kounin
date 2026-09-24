@@ -192,6 +192,13 @@ button{font:inherit;color:inherit}
 .lap.best .lap-s{color:var(--red)}
 .lap-note{margin:4px 0 0;font-size:.8rem;color:var(--muted)}
 .rlap-msg{margin:8px 0 0;font-weight:700;color:var(--red)}
+
+/* 下部ボタンの並び：iPhoneのSafariで崩れないようにflexで並べる */
+.foot-btns,.foot-btns.two{display:flex;gap:8px;align-items:stretch}
+.foot-btns .btn{width:auto;white-space:nowrap}
+.foot-btns #weakBtn{flex:0 0 auto}
+.foot-btns #mainBtn{flex:1 1 auto;min-width:0}
+.foot-btns [hidden]{display:none!important}
 </style>
 </head>
 <body>
