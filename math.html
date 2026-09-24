@@ -199,6 +199,10 @@ button{font:inherit;color:inherit}
 .foot-btns #weakBtn{flex:0 0 auto}
 .foot-btns #mainBtn{flex:1 1 auto;min-width:0}
 .foot-btns [hidden]{display:none!important}
+
+/* iPhoneで下部ボタンの表示が更新されない不具合への対策 */
+#quiz .foot{-webkit-transform:translateZ(0);transform:translateZ(0)}
+.appver{margin:18px 0 0;font-size:.75rem;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -1029,5 +1033,19 @@ initStore();
 </script>
 
 
+<script>
+(() => {
+  // 答え合わせ後などにボタンの表示を確実に描き直す
+  const foot = document.querySelector("#quiz .foot");
+  const redraw = () => requestAnimationFrame(() => {
+    if (!foot) return;
+    foot.style.display = "none"; void foot.offsetHeight; foot.style.display = "";
+  });
+  for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
+  // 更新が反映されたか確認できるようにバージョンを表示
+  const top = document.getElementById("top");
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-24 版3"; top.append(p); }
+})();
+</script>
 </body>
 </html>
