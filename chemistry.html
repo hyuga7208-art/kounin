@@ -461,7 +461,7 @@ function renderTop(){
       const E = EX[k], s = S.exams[k] || fresh();
       const done = E.Q.filter(q => s.results[q.id]).length;
       const wk = Object.keys(s.weak || {}).filter(id => E.byId[id]).length;
-      const running = s.run && s.run.i < s.run.ids.length;
+      const running = !!(s.run && s.run.ids.length);
       const LP = lapsOf(s), best = LP.length ? Math.max(...LP.map(l => l.score)) : 0;
       const meta = LP.length ? `${LP.length}周・最高${best}点` : done ? `${done} / ${E.Q.length}問 解いた` : "未着手";
       const sub = [LP.some(l => l.score === l.max) ? "★満点" : "", running ? "途中" : "", wk ? `苦手 ${wk}問` : ""].filter(Boolean).join("・");
@@ -501,9 +501,14 @@ function renderHome(){
   const acts = $("homeActions"); acts.textContent = "";
   const weak = weakIds();
   const run = st.run;
+  // 答え合わせのあと「次の問題へ」を押す前にページが読み込み直された問題（Claudeアプリへ移ったときなど）は、もう一度出さない
+  if (run) while (run.i < run.ids.length && run.ids[run.i] in run.log) run.i++;
   if (run && run.i < run.ids.length && byId[run.ids[run.i]]){
     const q = byId[run.ids[run.i]];
     acts.append(el("button", { class: "btn btn-main", onclick: () => { show("quiz"); renderQ(); } }, `続きから（${qname(q)}）`));
+    acts.append(el("button", { class: "btn btn-sub", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, lapsOf(st).length ? `${lapsOf(st).length + 1}周目を始める` : "はじめから解く"));
+  } else if (run && run.ids.length && run.i >= run.ids.length){
+    acts.append(el("button", { class: "btn btn-main", onclick: finish }, "結果を見る（最後の問題まで答え合わせ済み）"));
     acts.append(el("button", { class: "btn btn-sub", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, lapsOf(st).length ? `${lapsOf(st).length + 1}周目を始める` : "はじめから解く"));
   } else {
     acts.append(el("button", { class: "btn btn-main", onclick: () => startRun(Q.map(x => x.id), 0, "all") }, lapsOf(st).length ? `${lapsOf(st).length + 1}周目を始める` : "はじめから解く"));
@@ -655,6 +660,7 @@ function check(){
   v.className = "verdict" + (ok ? " ok" : "");
   v.textContent = ok ? "正解" : "不正解";
   v.append(el("span", { class: "pts", text: `${earned} / ${pts(q)}点` }));
+  if (run.mode === "weakall") waChecked();
   updateMain();
 }
 function refreshWeakBtn(){
@@ -676,6 +682,9 @@ function next(){
 }
 function finish(){
   const run = st.run;
+  // 点数は答え合わせの記録（log）から数え直す（同じ問題を2回答え合わせしても二重に数えない）
+  run.earned = Object.values(run.log).reduce((s, e) => s + e, 0);
+  run.max = Object.keys(run.log).reduce((s, id) => s + pts(byId[id]), 0);
   let lapInfo = null;
   if (run.mode === "all" && Object.keys(run.log).length === Q.length){
     st.last = { earned: run.earned, max: run.max };
@@ -745,10 +754,10 @@ function allWeak(){
 }
 function renderWA(){
   const box = $("waBox"); box.textContent = "";
-  const n = allWeak().length, left = WA ? WA.items.length - WA.i : 0;
-  if (!n && !left) return;
-  if (left) box.append(el("button", { class: "btn btn-main", disabled: ready ? null : "", onclick: waShow }, `苦手のまとめ解きを続ける（残り${left}問）`));
-  if (n) box.append(el("button", { class: left ? "linkbtn" : "btn btn-sub", disabled: ready ? null : "", onclick: startWeakAll }, left ? `はじめからやり直す（今の苦手 ${n}問）` : `苦手をまとめて解く（全部の回で${n}問）`));
+  const n = allWeak().length, left = WA ? WA.items.filter((x, j) => j >= WA.i && !WA.res[j]).length : 0;
+  if (!n && !WA) return;
+  if (WA) box.append(el("button", { class: "btn btn-main", disabled: ready ? null : "", onclick: waShow }, left ? `苦手のまとめ解きを続ける（残り${left}問）` : "苦手のまとめ解きの結果を見る"));
+  if (n) box.append(el("button", { class: WA ? "linkbtn" : "btn btn-sub", disabled: ready ? null : "", onclick: startWeakAll }, WA ? `はじめからやり直す（今の苦手 ${n}問）` : `苦手をまとめて解く（全部の回で${n}問）`));
   box.append(el("p", { class: "wa-note", text: "全部の回の苦手な問題を、間違えた回数の多い順に続けて解きます。" }));
 }
 function startWeakAll(){
@@ -756,6 +765,9 @@ function startWeakAll(){
   WA = { items, i: 0, res: [] }; waSave(); waShow();
 }
 function waShow(){
+  // 答え合わせ済みのまま読み込み直された問題は、もう一度出さない
+  while (WA.i < WA.items.length && WA.res[WA.i]) WA.i++;
+  if (WA.i >= WA.items.length){ waFinish(); return; }
   const [k] = WA.items[WA.i], nx = WA.items[WA.i + 1];
   cur = k; Q = EX[k].Q; byId = EX[k].byId;
   preload(k); if (nx) preload(nx[0]);   // 回を開いたときと同じく、その回（と次の問題の回）の画像を先読み
@@ -763,20 +775,20 @@ function waShow(){
   st.run = { ids: WA.items.map(x => x[1]), i: WA.i, mode: "weakall", earned: 0, max: 0, log: {}, added: [], cleared: [] };
   show("quiz"); renderQ();
 }
-// 答え合わせした問題の結果を残して、次の問題へ進める
-function waRecord(){
+// 答え合わせした結果を、その場で残す（ページが読み込み直されても二重に数えない）
+function waChecked(){
   const r = st.run;
   WA.res[WA.i] = { e: r.log[r.ids[r.i]] || 0, m: r.max, c: r.cleared.length ? 1 : 0, a: r.added.length ? 1 : 0 };
-  WA.i++; waSave();
+  waSave();
 }
-function waNext(){ waRecord(); if (WA.i < WA.items.length) waShow(); else waFinish(); }
+function waNext(){ WA.i++; waSave(); if (WA.i < WA.items.length) waShow(); else waFinish(); }
 function waLeave(){
-  if (checked){ checked = false; waRecord(); if (WA.i >= WA.items.length){ waFinish(); return; } }
+  if (checked){ checked = false; WA.i++; waSave(); if (WA.i >= WA.items.length){ waFinish(); return; } }
   renderTop(); show("top");
 }
 function waFinish(){
   const done = WA.items.map((it, n) => [it, WA.res[n]]).filter(x => x[1]);
-  WA = null; waSave(); st.run = null;
+  WA = null; waSave(); if (inWA()) st.run = null;
   const earned = done.reduce((s, x) => s + x[1].e, 0), max = done.reduce((s, x) => s + x[1].m, 0);
   const a = done.filter(x => x[1].a).length, c = done.filter(x => x[1].c).length;
   $("rexam").textContent = "全部の回";
@@ -1160,7 +1172,7 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-24 版6"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-26 版7"; top.append(p); }
 })();
 </script>
 </body>
