@@ -337,6 +337,9 @@ function norm(x){
   if (!s.results || typeof s.results !== "object") s.results = {};
   if (!s.weak || typeof s.weak !== "object") s.weak = {};
   if (!Array.isArray(s.laps)) s.laps = (s.last && typeof s.last.earned === "number") ? [{ score: s.last.earned, max: s.last.max, date: null }] : [];
+  // 同じ問題を二重に数えていた頃の記録（満点が100点を超えるもの。どの回も満点は100点）を100点満点に直す
+  for (const l of s.laps) if (l && l.max > 100){ l.score = Math.min(l.score, 100); l.max = 100; }
+  if (s.last && s.last.max > 100){ s.last.earned = Math.min(s.last.earned, 100); s.last.max = 100; }
   return s;
 }
 function normAll(x){
@@ -1172,7 +1175,7 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-26 版7"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-26 版8"; top.append(p); }
 })();
 </script>
 </body>
