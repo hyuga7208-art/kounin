@@ -556,6 +556,8 @@ function renderWeak(){
 /* ---------- 出題 ---------- */
 let sel = {}, checked = false, askClear = false, clearedMsg = false;
 function startRun(ids, i, mode){
+  const r = st.run, done = r ? Object.keys(r.log).length : 0;
+  if (done && !confirm(`いま解いている途中の続き（${r.ids.length}問中${done}問まで答え合わせ済み）は消えます。新しく始めますか？`)) return;
   askClear = false;
   st.run = { ids, i, mode, earned: 0, max: 0, log: {}, added: [], cleared: [] };
   save(); show("quiz"); renderQ();
@@ -1058,7 +1060,7 @@ initStore();
       right = CIRC[q.ans] || String(q.ans);
       mine = sel != null ? (CIRC[sel] || String(sel)) : "？";
     }
-    const same = mine === right || (q.blanks && q.blanks.every(k => sel && sel[k] === q.ans[k]));
+    const same = q.blanks ? !!sel && grade(q, sel).all : sel === q.ans;   // 採点と同じ判定（順不同も考える）
     return `高卒認定試験「${SUBJ_NAME}」${where}の問題です（画像を添付しています）。\n正解：${right}\n私の答え：${mine}${same ? "（正解）" : ""}\n` +
       (same ? "高校生にもわかるように、考え方と解き方を順番に解説してください。"
             : "高校生にもわかるように、考え方と解き方を順番に解説してください。私の答えのどこが違うのかも教えてください。");
@@ -1159,7 +1161,7 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-26 版8"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-27 版9"; top.append(p); }
 })();
 </script>
 </body>
