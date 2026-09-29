@@ -387,7 +387,7 @@ async function flush(){
   writing = false;
   if (pending){ pending = false; flush(); }
 }
-function save(){ localSave(); flush(); }
+function save(){ localSave(); flush(); if (window.KouninShare) KouninShare.push("chemistry"); }   // みんなの学習状況（share.js）にも送る
 async function initStore(){
   try {
     if (false /* ブラウザ版：記録はこのブラウザに保存 */){
@@ -1177,8 +1177,9 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-27 版9"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-29 版10"; top.append(p); }
 })();
 </script>
+<script src="share.js?v=10" data-subj="chemistry"></script>
 </body>
 </html>
