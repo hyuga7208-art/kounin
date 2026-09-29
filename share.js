@@ -4,7 +4,7 @@
    どの問題を間違えたかなどの記録そのものは送らない。
    index.html と各科目のページ（data-subj 付き）で読み込む。 */
 (() => {
-  const DB = "";   // Firebase Realtime Database の URL。空のときは、この機能を出さない
+  const DB = "https://kounin-5fbc8-default-rtdb.asia-southeast1.firebasedatabase.app/";   // Firebase Realtime Database の URL。空のときは、この機能を出さない
   const KEY = "kounin-share-v1";   // この端末の参加情報 { code: 合言葉, id: メンバーID, name: ニックネーム, dirty: [送れていない科目] }
   const SUBJECTS = { math: ["数学", "kounin-math-all-v2"], physics: ["物理基礎", "kounin-physics-all-v1"], chemistry: ["化学基礎", "kounin-chemistry-all-v1"] };
   const EXAMS = ["r7-1", "r7-2", "r6-1", "r6-2", "r5-1", "r5-2", "r4-1", "r4-2", "r3-1", "r3-2", "r2-1", "r2-2"], PER = 20;
