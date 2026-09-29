@@ -60,6 +60,13 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
 .sh-subj{font-weight:700}
 .sh-links{display:flex;flex-wrap:wrap;gap:0 18px;margin-top:6px}
 .sh-msg{margin:10px 0 0;font-size:.88rem;min-height:1.4em}
+.sh-live{margin:4px 0 0;font-weight:700;font-size:.88rem}
+.sh-live::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:#22A45D;margin-right:6px;vertical-align:1px}
+.sh-day{margin:2px 0 0;font-size:.85rem;color:var(--muted)}
+.sh-sub a{color:var(--sheet);font-weight:700;white-space:nowrap;margin-left:4px}
+.sh-rec{list-style:none;margin:6px 0 0;padding:6px 0 0;border-top:1px dashed var(--line);font-size:.8rem;color:var(--muted)}
+.sh-rec li{display:grid;grid-template-columns:1.3em 1fr auto;gap:4px}
+.sh-rec .ok{color:#D21F2D;font-weight:700}
 </style>
 </head>
 <body>
@@ -80,7 +87,7 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
   </section>
 </main>
 
-<script src="share.js?v=10"></script>
+<script src="share.js?v=11"></script>
 <script>
 /* みんなの学習状況：グループを作る・参加する・友だちの進み具合を見る（データのやりとりは share.js） */
 (() => {
@@ -100,23 +107,15 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
   const why = e => e && e.message === "code" ? "合言葉は英数字10文字です。"
     : e && e.message === "none" ? "その合言葉のグループが見つかりません。合言葉を確かめてください。"
     : "つながりませんでした。通信状態を確かめて、もう一度試してください。";
-  const num = x => (Number.isFinite(+x) ? Math.max(0, Math.round(+x)) : 0);
-  function ago(t){
-    const d = new Date(t), now = new Date();
-    const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
-    const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
-    return days <= 0 ? `今日 ${hm}` : days === 1 ? `きのう ${hm}` : `${days}日前`;
-  }
-  function line(v){
-    if (!v || typeof v !== "object" || !num(v.done)) return "まだ解いていません";
-    return `${num(v.lap)}周目（この周でクリア ${num(v.cleared)}/12回）・解いた ${num(v.done)}/${num(v.total) || 240}問（正解 ${num(v.ok)}）・苦手 ${num(v.weak)}問`;
-  }
+  const { num, listOf, name, ago, live, where, line, dayText } = SH.fmt;
+  let stop = () => {}, tick = null;
 
   // グループに入っていないとき：ニックネームを決めて、グループを作る／合言葉で参加する
   function renderJoin(){
     box.textContent = "";
     const pre = (new URLSearchParams(location.search).get("g") || "").trim().toLowerCase();
-    box.append(el("p", { class: "sh-note", text: "一緒に勉強している友だちと、進み具合（周回・解いた問題数・正解数・苦手の数）を見せ合えます。どの問題を間違えたかなどの記録は送りません。" }));
+    stop(); clearInterval(tick);
+    box.append(el("p", { class: "sh-note", text: "一緒に勉強している友だちと、進み具合をリアルタイムで見せ合えます。友だちには、ニックネーム・科目ごとの進み具合・どの問題を解いて正解したか・いま解いている問題・今日の解答数が見えます。" }));
     box.append(el("label", { class: "sh-lab", for: "shName", text: "ニックネーム（友だちに見えます）" }),
       el("input", { class: "sh-in", id: "shName", type: "text", maxlength: "20", autocomplete: "nickname" }));
     const joinBox = el("div", { class: "sh-join" }, el("b", { text: "友だちのグループに入る" }),
@@ -148,30 +147,38 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
     box.textContent = "";
     box.append(el("div", { class: "sh-head" }, el("span", { text: "合言葉" }), el("b", { class: "sh-code", text: m.code }),
       el("button", { class: "btn btn-sub", type: "button", onclick: sendCode }, "合言葉を送る")));
-    box.append(el("div", { class: "sh-list", id: "shList", "aria-live": "polite" }));
-    box.append(el("div", { class: "sh-row" }, el("button", { class: "btn btn-sub", type: "button", onclick: refresh }, "最新にする")));
+    box.append(el("div", { class: "sh-list", id: "shList", "aria-live": "polite" }, el("p", { class: "sh-note", text: "読み込んでいます…" })));
+    box.append(el("p", { class: "sh-note", text: "自動で最新の状況になります。名前の下の「いま解いています」は、友だちが問題を解いている間だけ出ます。" }));
     box.append(el("div", { class: "sh-links" },
       el("button", { class: "linkbtn", type: "button", onclick: rename }, "ニックネームを変える"),
       el("button", { class: "linkbtn", type: "button", onclick: leave }, "グループから抜ける")));
-    refresh();
+    let MS = null;
+    SH.flush().catch(() => {}).then(() => { stop = SH.watch(ms => { MS = ms; draw(MS); }); });
+    clearInterval(tick); tick = setInterval(() => { if (MS) draw(MS); }, 20000);   // 「いま解いています」「今日 ○:○○」を時間に合わせて直す
   }
-  async function refresh(){
+  function draw(all){
     const list = $("shList"); if (!list) return;
-    list.textContent = ""; list.append(el("p", { class: "sh-note", text: "読み込んでいます…" }));
-    try {
-      await SH.flush().catch(() => {});
-      const ms = (await SH.list()).sort((a, b) => (b.self - a.self) || (num(b.updated) - num(a.updated)));
-      list.textContent = "";
-      for (const v of ms){
-        const card = el("section", { class: "sh-card" + (v.self ? " self" : "") },
-          el("div", { class: "sh-name" }, el("b", { text: String(v.name || "（名前なし）").slice(0, 20) }),
-            v.self ? el("span", { class: "sh-me", text: "自分" }) : null,
-            v.updated ? el("span", { class: "sh-time", text: ago(num(v.updated)) }) : null));
-        for (const [k, [label]] of Object.entries(SH.SUBJECTS)) card.append(el("p", { class: "sh-sub" }, el("span", { class: "sh-subj", text: label }), el("span", { text: line(v[k]) })));
-        list.append(card);
+    const ms = [...all].sort((a, b) => (b.self - a.self) || (num(b.updated) - num(a.updated)));
+    list.textContent = "";
+    for (const v of ms){
+      const n = live(v);
+      const card = el("section", { class: "sh-card" + (v.self ? " self" : "") },
+        el("div", { class: "sh-name" }, el("b", { text: name(v) }),
+          v.self ? el("span", { class: "sh-me", text: "自分" }) : null,
+          v.updated ? el("span", { class: "sh-time", text: ago(num(v.updated)) }) : null),
+        n ? el("p", { class: "sh-live", text: `いま解いています：${where(n)}` }) : null,
+        el("p", { class: "sh-day", text: dayText(v) }));
+      for (const [k, [label]] of Object.entries(SH.SUBJECTS)) card.append(el("p", { class: "sh-sub" }, el("span", { class: "sh-subj", text: label }),
+        el("span", {}, line(v[k]), v.self ? null : el("a", { href: `${k}.html#friend=${v.id}`, text: "詳しく ›" }))));
+      const rec = listOf(v.recent).filter(r => r && typeof r === "object").slice(0, 3);
+      if (rec.length){
+        const ul = el("ul", { class: "sh-rec", "aria-label": "最近の解答" });
+        for (const r of rec) ul.append(el("li", {}, el("span", { class: r.ok ? "ok" : "", text: r.ok ? "○" : "×" }), el("span", { text: where(r) }), el("span", { text: ago(num(r.t)) })));
+        card.append(ul);
       }
-      if (ms.length < 2) list.append(el("p", { class: "sh-note", text: "まだ友だちが参加していません。「合言葉を送る」で知らせてください。" }));
-    } catch (e){ list.textContent = ""; list.append(el("p", { class: "sh-note", text: why(e) })); }
+      list.append(card);
+    }
+    if (ms.length < 2) list.append(el("p", { class: "sh-note", text: "まだ友だちが参加していません。「合言葉を送る」で知らせてください。" }));
   }
   async function sendCode(){
     const m = SH.me(), url = `${location.origin}${location.pathname}?g=${m.code}`;
@@ -184,7 +191,7 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
     const m = SH.me(), n = (prompt("新しいニックネーム（20文字まで）", m.name) || "").trim();
     if (!n || n === m.name) return;
     if (n.length > 20){ msg("ニックネームは20文字までです。"); return; }
-    try { await SH.rename(n); msg("ニックネームを変えました。"); refresh(); } catch (e){ msg(why(e)); }
+    try { await SH.rename(n); msg("ニックネームを変えました。"); } catch (e){ msg(why(e)); }
   }
   async function leave(){
     if (!confirm("グループから抜けますか？ 友だちの一覧から、あなたの学習状況が消えます。")) return;

@@ -38,15 +38,23 @@ tools/firebase-rules.json       Firebase Realtime Database のセキュリティ
 4. バックアップ（書き出し・読み込み）の `<script>`
 5. 「Claudeに解説してもらう」の `<script>`：問題の画像（文章・図も含む）を canvas で1枚にまとめ、いちばん上に質問文（科目・回・問題・正解・自分の答え・依頼）を書き込んで、共有メニューで渡す（共有できないときは画像を保存して質問文をコピー）。質問文を画像にも入れているのは、共有で文章が渡らないアプリでも画像を送るだけで済むようにするため
 6. iPhone の表示不具合対策と、アプリのバージョン表示
-7. `<script src="share.js?v=N" data-subj="科目">`：みんなの学習状況。`save()` のたびに `KouninShare.push(科目)` で要約を送る
+7. `<script src="share.js?v=N" data-subj="科目">`：みんなの学習状況。`save()` のたびに `KouninShare.push(科目)` で送る。share.js は `renderQ` `show` `check` を包み、回の一覧に友だちの一覧（`#frBox`）、`#friend` に友だちの詳しい状況の画面を作る
 
 ## みんなの学習状況（share.js）
 
-- 一緒に勉強している友だちと進み具合を見せ合う。Firebase Realtime Database の `groups/<合言葉>/<メンバーID>` に、ニックネーム・最終更新時刻・科目ごとの要約（`lap` `cleared` `full` `laps` `done` `ok` `weak` `total`）だけを置く。**どの問題を間違えたかなどの記録そのものは送らない。**
-- `share.js` の `DB` にデータベースの URL を入れると機能が出る。空なら何も出ず、通信もしない。
+- 一緒に勉強している友だちと進み具合をリアルタイムで見せ合う。Firebase Realtime Database の `groups/<合言葉>/<メンバーID>` に置くもの：
+  - `name` `updated`（最後に送った時刻）
+  - `math` `physics` `chemistry`：要約（`lap` `cleared` `full` `laps` `done` `ok` `weak` `total`）と `ex`（回ごとの結果 `{ "<回>": { r: { 問題ID: 1|0 }, p: [周回の点数], w: 苦手の数 } }`。r は最後に解いたときの○×）
+  - `now`：いま解いている問題 `{ s: 科目, e: 回, q: 問題ID, l: "令和7年度 第1回 大問1 (2)", t }`。問題画面を出したとき・60秒ごとに送り、問題画面を離れたとき・画面が裏に回ったとき・閉じたときに消す。見る側は `t` が150秒より古ければ出さない
+  - `day`：今日の解答数 `{ d, n, ok }`、`recent`：最近の解答（新しい10件）
+- 参加画面に「友だちに見えるもの」を書いている。見せるものを増やすときは、その説明も直す。
+- 要約は項目ごとのパス（`math/lap` など）で書く。科目をまるごと書くと `ex` が一度消えて、見ている側の画面がちらつく。回ごとの結果・今日の解答数・最近の解答は別の PATCH で送る（データベースのルールが古いままでも、要約は届くように）。
+- 見る側は EventSource（REST のストリーム）で変化をすぐ受け取る（`KouninShare.watch`）。使えないときは20秒ごとに読み直す。
+- `share.js` の `DB` にデータベースの URL を入れると機能が出る。空なら何も出ず、通信もしない。参加していないときも通信しない。
 - 合言葉（10文字）・メンバーID（16文字）はアプリが作る（`abcdefghijkmnpqrstuvwxyz23456789` の文字）。合言葉を知っている人だけがグループを読める。グループの一覧は読めない（`tools/firebase-rules.json`）。ログインはないので、合言葉を知っている人は書き込みもできる（友だち同士で使う前提）。
-- 要約は各科目の記録（localStorage）から `share.js` が数える。送れなかった科目は `dirty` に覚えておき、次に開いたときや保存したときに送り直す。
-- 友だちの名前などサーバーから来た文字は、必ず `textContent` で表示する（`innerHTML` を使わない）。
+- **ルール（`tools/firebase-rules.json`）を変えたら、利用者に Firebase のコンソールの「Realtime Database」→「ルール」に貼り直してもらう**（この作業環境からは Firebase に接続できない）。新しい項目を送るときは、ルールが古いままでも今までの項目が届くように作る。
+- 要約・回ごとの結果は各科目の記録（localStorage）から `share.js` が数える。送れなかった科目は `dirty` に覚えておき、次に開いたときや保存したときに送り直す。
+- 友だちの名前・問題名などサーバーから来た文字は、必ず `textContent` で表示する（`innerHTML` を使わない）。
 - `share.js` を変えたら、読み込んでいる4つのページの `share.js?v=N` の N を上げる（キャッシュで古い share.js が使われないように）。
 
 3〜5 は `renderQ` を包んで拡張したり、メインの `st` `cur` `byId` `S` `normAll` `localSave` `renderTop` などを直接使ったりしている。script の順番を変えない。
@@ -58,7 +66,7 @@ tools/firebase-rules.json       Firebase Realtime Database のセキュリティ
   - `kounin-math-all-v2`（数学。古い `kounin-math-r7-1-v1` からの引き継ぎ処理あり）、`kounin-physics-all-v1`、`kounin-chemistry-all-v1`
   - 中身：`{ exams: { "r7-1": { results, run, last, weak, laps }, … } }`。`results` `weak` `run.ids` は問題IDで記録している。
   - 別のキー `kounin-<科目>-weakall-v1`：苦手のまとめ解きの途中経過だけ（`{ items: [[回, 問題ID], …], i, res }`）。終わると消える。バックアップには入れない。
-  - 別のキー `kounin-share-v1`：みんなの学習状況の参加情報（`{ code: 合言葉, id: メンバーID, name: ニックネーム, dirty: [送れていない科目] }`）。3科目とトップで共通。バックアップには入れない。
+  - 別のキー `kounin-share-v1`：みんなの学習状況の参加情報（`{ code: 合言葉, id: メンバーID, name: ニックネーム, dirty: [送れていない科目], day: 今日の解答数, recent: 最近の解答 }`）。3科目とトップで共通。バックアップには入れない。
 - **バックアップファイルの形式を変えない。** `{ app, v: 1, exported, state }`（`app` は `kounin-math` / `kounin-physics` / `kounin-chemistry`）、ファイル名は `<app>-backup-YYYYMMDD.json`。読み込みは `app` が一致するものだけ受け付ける。
 - **EXAMS の問題ID・正解・画像IDの対応を崩さない。** 問題IDを変えると今までの記録と合わなくなる。
 - 次の機能が今までどおり動くこと：周回、苦手（回ごと・全部の回まとめて）、計算用紙、「Claudeに解説してもらう」、バックアップの書き出しと読み込み。
@@ -75,5 +83,5 @@ tools/firebase-rules.json       Firebase Realtime Database のセキュリティ
 2. ローカルでは HTTP サーバーで開く（`python3 -m http.server 8000` → http://localhost:8000/ ）。file:// で直接開くと、Claude 解説用の画像づくりがブラウザに止められる（質問文のコピーだけになる）。
 3. 3科目それぞれで、いくつかの回の問題を開き、画像が表示されること、答え合わせの正解が問題と合っていることを確かめる。物理・化学は「この問に必要な文章・図」がある問題（大問4など）も見る。
 4. 周回・苦手（回ごと・まとめて解く）・計算用紙・Claude解説・バックアップの書き出しと読み込みを一通り操作する。
-5. みんなの学習状況を変えたときは、`tools/firebase-rules.json` と同じ決まりの模擬サーバーを手元で立て、`share.js` の `DB` をそこに向けたコピーで、作る・参加する・自動で送る・送り直し・抜けるを試す（本番のデータベースで試さない）。
+5. みんなの学習状況を変えたときは、`tools/firebase-rules.json` と同じ決まり（書き込んだ場所だけを調べる）で、EventSource のストリームにも応える模擬サーバーを手元で立て、`share.js` の `DB` をそこに向けたコピーで、2つのブラウザを使って、作る・参加する・自動で送る・いま解いているの表示と消え方・詳しい画面・送り直し・抜ける・古いルールのとき を試す（本番のデータベースで試さない）。
 6. GitHub Pages は反映・キャッシュに数分かかることがある。

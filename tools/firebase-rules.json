@@ -8,9 +8,43 @@
           ".validate": "newData.hasChildren(['name', 'updated'])",
           "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
           "updated": { ".validate": "newData.isNumber()" },
-          "math": { "$k": { ".validate": "newData.isNumber()" } },
-          "physics": { "$k": { ".validate": "newData.isNumber()" } },
-          "chemistry": { "$k": { ".validate": "newData.isNumber()" } },
+          "math": {
+            "ex": { "$exam": { "r": { "$q": { ".validate": "newData.isNumber()" } }, "p": { "$i": { ".validate": "newData.isNumber()" } }, "w": { ".validate": "newData.isNumber()" }, "$o": { ".validate": false } } },
+            "$k": { ".validate": "newData.isNumber()" }
+          },
+          "physics": {
+            "ex": { "$exam": { "r": { "$q": { ".validate": "newData.isNumber()" } }, "p": { "$i": { ".validate": "newData.isNumber()" } }, "w": { ".validate": "newData.isNumber()" }, "$o": { ".validate": false } } },
+            "$k": { ".validate": "newData.isNumber()" }
+          },
+          "chemistry": {
+            "ex": { "$exam": { "r": { "$q": { ".validate": "newData.isNumber()" } }, "p": { "$i": { ".validate": "newData.isNumber()" } }, "w": { ".validate": "newData.isNumber()" }, "$o": { ".validate": false } } },
+            "$k": { ".validate": "newData.isNumber()" }
+          },
+          "now": {
+            "s": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "e": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "q": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "l": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "t": { ".validate": "newData.isNumber()" },
+            "$o": { ".validate": false }
+          },
+          "day": {
+            "d": { ".validate": "newData.isString() && newData.val().length <= 12" },
+            "n": { ".validate": "newData.isNumber()" },
+            "ok": { ".validate": "newData.isNumber()" },
+            "$o": { ".validate": false }
+          },
+          "recent": {
+            "$i": {
+              "s": { ".validate": "newData.isString() && newData.val().length <= 20" },
+              "e": { ".validate": "newData.isString() && newData.val().length <= 20" },
+              "q": { ".validate": "newData.isString() && newData.val().length <= 20" },
+              "l": { ".validate": "newData.isString() && newData.val().length <= 60" },
+              "ok": { ".validate": "newData.isNumber()" },
+              "t": { ".validate": "newData.isNumber()" },
+              "$o": { ".validate": false }
+            }
+          },
           "$other": { ".validate": false }
         }
       }
