@@ -29,6 +29,37 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
 .subject i{font-style:normal;color:var(--sheet);font-weight:700;font-size:1.3rem}
 .subject:focus-visible{outline:3px solid var(--sheet);outline-offset:2px}
 .note{margin-top:28px;color:var(--muted);font-size:.85rem}
+
+/* みんなの学習状況 */
+.share{margin-top:32px;padding-top:20px;border-top:1px solid var(--line)}
+.share h2{font-size:1.2rem;margin:0}
+.sh-note{margin:6px 0 0;color:var(--muted);font-size:.88rem}
+.sh-lab{display:block;margin:14px 0 4px;font-size:.9rem;font-weight:700}
+.sh-in{width:100%;min-height:46px;padding:0 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:1rem}
+.sh-row{display:grid;gap:8px;margin-top:12px}
+.sh-join{margin-top:18px;padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:10px}
+.sh-join b{font-size:.95rem}
+.btn{appearance:none;border:0;border-radius:10px;min-height:48px;padding:0 16px;font:inherit;font-weight:700;font-size:1rem;cursor:pointer}
+.btn-main{background:var(--sheet);color:#fff}
+.btn-sub{background:transparent;border:2px solid var(--sheet);color:var(--sheet)}
+.btn:disabled{opacity:.45;cursor:default}
+:root[data-theme="dark"] .btn-main{color:#0F1720}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn-main{color:#0F1720}}
+.linkbtn{appearance:none;background:none;border:0;color:var(--muted);text-decoration:underline;font:inherit;font-size:.85rem;padding:8px 0;cursor:pointer}
+.sh-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:12px;font-size:.9rem;color:var(--muted)}
+.sh-code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.1rem;color:var(--ink);letter-spacing:.06em}
+.sh-head .btn{min-height:40px;font-size:.9rem;margin-left:auto}
+.sh-list{display:grid;gap:10px;margin-top:14px}
+.sh-card{padding:12px 14px;background:var(--paper);border:1px solid var(--line);border-radius:10px}
+.sh-card.self{border-left:5px solid var(--sheet)}
+.sh-name{display:flex;align-items:baseline;gap:8px}
+.sh-name b{font-size:1.05rem;overflow-wrap:anywhere}
+.sh-me{font-size:.75rem;color:var(--sheet);border:1px solid var(--sheet);border-radius:999px;padding:0 8px}
+.sh-time{margin-left:auto;color:var(--muted);font-size:.8rem;white-space:nowrap}
+.sh-sub{display:grid;grid-template-columns:4.6em 1fr;gap:6px;margin:6px 0 0;font-size:.85rem}
+.sh-subj{font-weight:700}
+.sh-links{display:flex;flex-wrap:wrap;gap:0 18px;margin-top:6px}
+.sh-msg{margin:10px 0 0;font-size:.88rem;min-height:1.4em}
 </style>
 </head>
 <body>
@@ -41,6 +72,129 @@ h1{font-size:1.9rem;line-height:1.25;margin:0}
     <a class="subject" href="chemistry.html"><div><b>化学基礎</b><span>全12回・240問</span></div><i aria-hidden="true">›</i></a>
   </div>
   <p class="note">記録はこのブラウザに、科目ごとに保存されます。各科目のトップ画面から、記録をファイルに書き出してバックアップできます。</p>
+
+  <section class="share" id="share" hidden aria-labelledby="shTitle">
+    <h2 id="shTitle">みんなの学習状況</h2>
+    <div id="shBody"></div>
+    <p class="sh-msg" id="shMsg" role="status"></p>
+  </section>
 </main>
+
+<script src="share.js?v=10"></script>
+<script>
+/* みんなの学習状況：グループを作る・参加する・友だちの進み具合を見る（データのやりとりは share.js） */
+(() => {
+  const SH = window.KouninShare; if (!SH || !SH.enabled) return;
+  const $ = id => document.getElementById(id), box = $("shBody");
+  function el(tag, attrs = {}, ...kids){
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)){
+      if (v == null) continue;
+      if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+    }
+    for (const c of kids) if (c != null) n.append(c);
+    return n;
+  }
+  const msg = t => { $("shMsg").textContent = t || ""; };
+  const why = e => e && e.message === "code" ? "合言葉は英数字10文字です。"
+    : e && e.message === "none" ? "その合言葉のグループが見つかりません。合言葉を確かめてください。"
+    : "つながりませんでした。通信状態を確かめて、もう一度試してください。";
+  const num = x => (Number.isFinite(+x) ? Math.max(0, Math.round(+x)) : 0);
+  function ago(t){
+    const d = new Date(t), now = new Date();
+    const days = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+    const hm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return days <= 0 ? `今日 ${hm}` : days === 1 ? `きのう ${hm}` : `${days}日前`;
+  }
+  function line(v){
+    if (!v || typeof v !== "object" || !num(v.done)) return "まだ解いていません";
+    return `${num(v.lap)}周目（この周でクリア ${num(v.cleared)}/12回）・解いた ${num(v.done)}/${num(v.total) || 240}問（正解 ${num(v.ok)}）・苦手 ${num(v.weak)}問`;
+  }
+
+  // グループに入っていないとき：ニックネームを決めて、グループを作る／合言葉で参加する
+  function renderJoin(){
+    box.textContent = "";
+    const pre = (new URLSearchParams(location.search).get("g") || "").trim().toLowerCase();
+    box.append(el("p", { class: "sh-note", text: "一緒に勉強している友だちと、進み具合（周回・解いた問題数・正解数・苦手の数）を見せ合えます。どの問題を間違えたかなどの記録は送りません。" }));
+    box.append(el("label", { class: "sh-lab", for: "shName", text: "ニックネーム（友だちに見えます）" }),
+      el("input", { class: "sh-in", id: "shName", type: "text", maxlength: "20", autocomplete: "nickname" }));
+    const joinBox = el("div", { class: "sh-join" }, el("b", { text: "友だちのグループに入る" }),
+      el("label", { class: "sh-lab", for: "shCode", text: "合言葉（英数字10文字）" }),
+      el("input", { class: "sh-in", id: "shCode", type: "text", maxlength: "10", value: pre, autocapitalize: "off", autocomplete: "off", spellcheck: "false" }),
+      el("div", { class: "sh-row" }, el("button", { class: pre ? "btn btn-main" : "btn btn-sub", type: "button", onclick: () => go(false) }, "このグループに参加する")));
+    const makeBox = el("div", { class: "sh-row" }, el("button", { class: pre ? "btn btn-sub" : "btn btn-main", type: "button", onclick: () => go(true) }, "新しくグループを作る"));
+    if (pre) box.append(joinBox, makeBox); else box.append(makeBox, joinBox);
+  }
+  async function go(create){
+    const name = $("shName").value.trim();
+    if (!name){ msg("ニックネームを入れてください。"); $("shName").focus(); return; }
+    for (const b of box.querySelectorAll("button")) b.disabled = true;
+    msg(create ? "グループを作っています…" : "参加しています…");
+    try {
+      if (create) await SH.create(name); else await SH.join($("shCode").value, name);
+      history.replaceState(null, "", location.pathname + "#share");
+      msg(create ? "グループを作りました。「合言葉を送る」で友だちに知らせてください。" : "グループに参加しました。");
+      renderMember();
+    } catch (e){
+      msg(why(e));
+      for (const b of box.querySelectorAll("button")) b.disabled = false;
+    }
+  }
+
+  // グループに入っているとき：合言葉と、みんなの進み具合
+  function renderMember(){
+    const m = SH.me();
+    box.textContent = "";
+    box.append(el("div", { class: "sh-head" }, el("span", { text: "合言葉" }), el("b", { class: "sh-code", text: m.code }),
+      el("button", { class: "btn btn-sub", type: "button", onclick: sendCode }, "合言葉を送る")));
+    box.append(el("div", { class: "sh-list", id: "shList", "aria-live": "polite" }));
+    box.append(el("div", { class: "sh-row" }, el("button", { class: "btn btn-sub", type: "button", onclick: refresh }, "最新にする")));
+    box.append(el("div", { class: "sh-links" },
+      el("button", { class: "linkbtn", type: "button", onclick: rename }, "ニックネームを変える"),
+      el("button", { class: "linkbtn", type: "button", onclick: leave }, "グループから抜ける")));
+    refresh();
+  }
+  async function refresh(){
+    const list = $("shList"); if (!list) return;
+    list.textContent = ""; list.append(el("p", { class: "sh-note", text: "読み込んでいます…" }));
+    try {
+      await SH.flush().catch(() => {});
+      const ms = (await SH.list()).sort((a, b) => (b.self - a.self) || (num(b.updated) - num(a.updated)));
+      list.textContent = "";
+      for (const v of ms){
+        const card = el("section", { class: "sh-card" + (v.self ? " self" : "") },
+          el("div", { class: "sh-name" }, el("b", { text: String(v.name || "（名前なし）").slice(0, 20) }),
+            v.self ? el("span", { class: "sh-me", text: "自分" }) : null,
+            v.updated ? el("span", { class: "sh-time", text: ago(num(v.updated)) }) : null));
+        for (const [k, [label]] of Object.entries(SH.SUBJECTS)) card.append(el("p", { class: "sh-sub" }, el("span", { class: "sh-subj", text: label }), el("span", { text: line(v[k]) })));
+        list.append(card);
+      }
+      if (ms.length < 2) list.append(el("p", { class: "sh-note", text: "まだ友だちが参加していません。「合言葉を送る」で知らせてください。" }));
+    } catch (e){ list.textContent = ""; list.append(el("p", { class: "sh-note", text: why(e) })); }
+  }
+  async function sendCode(){
+    const m = SH.me(), url = `${location.origin}${location.pathname}?g=${m.code}`;
+    const text = `高認 過去問クイズで、学習状況を見せ合おう！\n合言葉：${m.code}\n${url}`;
+    if (navigator.share){ try { await navigator.share({ text }); } catch (e) {} return; }
+    try { await navigator.clipboard.writeText(text); msg("合言葉とリンクをコピーしました。友だちに送ってください。"); }
+    catch (e){ msg(`合言葉：${m.code}（友だちに送ってください）`); }
+  }
+  async function rename(){
+    const m = SH.me(), n = (prompt("新しいニックネーム（20文字まで）", m.name) || "").trim();
+    if (!n || n === m.name) return;
+    if (n.length > 20){ msg("ニックネームは20文字までです。"); return; }
+    try { await SH.rename(n); msg("ニックネームを変えました。"); refresh(); } catch (e){ msg(why(e)); }
+  }
+  async function leave(){
+    if (!confirm("グループから抜けますか？ 友だちの一覧から、あなたの学習状況が消えます。")) return;
+    try { await SH.leave(); msg("グループから抜けました。"); renderJoin(); } catch (e){ msg(why(e)); }
+  }
+
+  $("share").hidden = false;
+  if (SH.me()) renderMember(); else renderJoin();
+  if (location.hash === "#share" || new URLSearchParams(location.search).has("g")) $("share").scrollIntoView();
+})();
+</script>
 </body>
 </html>

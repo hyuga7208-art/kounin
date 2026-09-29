@@ -1,16 +1,18 @@
 # CLAUDE.md
 
-高卒認定試験（高認）の過去問クイズ。GitHub Pages で公開している静的サイトで、ビルド・パッケージ管理・自動テストの仕組みはない。HTML をブラウザで開くだけで動く。外部から読み込んでいるのは Google Fonts だけ。
+高卒認定試験（高認）の過去問クイズ。GitHub Pages で公開している静的サイトで、ビルド・パッケージ管理・自動テストの仕組みはない。HTML をブラウザで開くだけで動く。外部から読み込んでいるのは Google Fonts だけ（「みんなの学習状況」は Firebase Realtime Database に REST で読み書きする。SDK は使わない）。
 
 ## ファイル構成
 
 ```
-index.html                      科目の選択（各科目のHTMLへのリンクだけ）
+index.html                      科目の選択と「みんなの学習状況」（グループを作る・参加する・友だちの進み具合を見る）
 math.html                       数学（記入式：ア・イ…の欄ごとに数字をマーク）
 physics.html                    物理基礎（選択式：解答番号ごとに①〜④などをマーク）
 chemistry.html                  化学基礎（選択式。physics.html とほぼ同じコード）
 img/<科目>/<回>/<画像ID>.png     問題画像
+share.js                        みんなの学習状況のデータのやりとり（index.html と各科目のページで読み込む）
 tools/check_images.py           問題画像がそろっているかの確認
+tools/firebase-rules.json       Firebase Realtime Database のセキュリティルール（Firebase のコンソールに貼るもの）
 ```
 
 - 科目は `math` / `physics` / `chemistry`。回は `r7-1`（令和7年度第1回）〜 `r2-2`。各科目 12回 × 20問。
@@ -36,6 +38,16 @@ tools/check_images.py           問題画像がそろっているかの確認
 4. バックアップ（書き出し・読み込み）の `<script>`
 5. 「Claudeに解説してもらう」の `<script>`：問題の画像（文章・図も含む）を canvas で1枚にまとめ、いちばん上に質問文（科目・回・問題・正解・自分の答え・依頼）を書き込んで、共有メニューで渡す（共有できないときは画像を保存して質問文をコピー）。質問文を画像にも入れているのは、共有で文章が渡らないアプリでも画像を送るだけで済むようにするため
 6. iPhone の表示不具合対策と、アプリのバージョン表示
+7. `<script src="share.js?v=N" data-subj="科目">`：みんなの学習状況。`save()` のたびに `KouninShare.push(科目)` で要約を送る
+
+## みんなの学習状況（share.js）
+
+- 一緒に勉強している友だちと進み具合を見せ合う。Firebase Realtime Database の `groups/<合言葉>/<メンバーID>` に、ニックネーム・最終更新時刻・科目ごとの要約（`lap` `cleared` `full` `laps` `done` `ok` `weak` `total`）だけを置く。**どの問題を間違えたかなどの記録そのものは送らない。**
+- `share.js` の `DB` にデータベースの URL を入れると機能が出る。空なら何も出ず、通信もしない。
+- 合言葉（10文字）・メンバーID（16文字）はアプリが作る（`abcdefghijkmnpqrstuvwxyz23456789` の文字）。合言葉を知っている人だけがグループを読める。グループの一覧は読めない（`tools/firebase-rules.json`）。ログインはないので、合言葉を知っている人は書き込みもできる（友だち同士で使う前提）。
+- 要約は各科目の記録（localStorage）から `share.js` が数える。送れなかった科目は `dirty` に覚えておき、次に開いたときや保存したときに送り直す。
+- 友だちの名前などサーバーから来た文字は、必ず `textContent` で表示する（`innerHTML` を使わない）。
+- `share.js` を変えたら、読み込んでいる4つのページの `share.js?v=N` の N を上げる（キャッシュで古い share.js が使われないように）。
 
 3〜5 は `renderQ` を包んで拡張したり、メインの `st` `cur` `byId` `S` `normAll` `localSave` `renderTop` などを直接使ったりしている。script の順番を変えない。
 
@@ -46,13 +58,14 @@ tools/check_images.py           問題画像がそろっているかの確認
   - `kounin-math-all-v2`（数学。古い `kounin-math-r7-1-v1` からの引き継ぎ処理あり）、`kounin-physics-all-v1`、`kounin-chemistry-all-v1`
   - 中身：`{ exams: { "r7-1": { results, run, last, weak, laps }, … } }`。`results` `weak` `run.ids` は問題IDで記録している。
   - 別のキー `kounin-<科目>-weakall-v1`：苦手のまとめ解きの途中経過だけ（`{ items: [[回, 問題ID], …], i, res }`）。終わると消える。バックアップには入れない。
+  - 別のキー `kounin-share-v1`：みんなの学習状況の参加情報（`{ code: 合言葉, id: メンバーID, name: ニックネーム, dirty: [送れていない科目] }`）。3科目とトップで共通。バックアップには入れない。
 - **バックアップファイルの形式を変えない。** `{ app, v: 1, exported, state }`（`app` は `kounin-math` / `kounin-physics` / `kounin-chemistry`）、ファイル名は `<app>-backup-YYYYMMDD.json`。読み込みは `app` が一致するものだけ受け付ける。
 - **EXAMS の問題ID・正解・画像IDの対応を崩さない。** 問題IDを変えると今までの記録と合わなくなる。
 - 次の機能が今までどおり動くこと：周回、苦手（回ごと・全部の回まとめて）、計算用紙、「Claudeに解説してもらう」、バックアップの書き出しと読み込み。
 - 3科目はほぼ同じコード（物理と化学はほぼ同一）。共通の直しは3ファイルすべてに入れる。
 - アプリを変えたら、`アプリのバージョン：YYYY-MM-DD 版N` を3ファイルとも上げる（iPhone で更新が反映されたか確かめるため）。
 - 画像はこのリポジトリ内（同じオリジン）に置く。別ドメインの画像にすると、Claude 解説用の canvas が汚染されて画像を作れなくなる。
-- ビルド手順や外部ライブラリを増やさない。
+- ビルド手順や外部ライブラリを増やさない（Firebase も SDK は使わず fetch で REST を呼ぶ）。
 - プルリクエストの説明は日本語で書く。
 - 作業が終わったら、確認を通したうえでプルリクエストを作り、**そのままマージして、GitHub Pages への反映（Actions の「pages build and deployment」の成功）まで確かめてから報告する**（利用者の希望。毎回マージしてよいか聞かなくてよい）。
 
@@ -62,4 +75,5 @@ tools/check_images.py           問題画像がそろっているかの確認
 2. ローカルでは HTTP サーバーで開く（`python3 -m http.server 8000` → http://localhost:8000/ ）。file:// で直接開くと、Claude 解説用の画像づくりがブラウザに止められる（質問文のコピーだけになる）。
 3. 3科目それぞれで、いくつかの回の問題を開き、画像が表示されること、答え合わせの正解が問題と合っていることを確かめる。物理・化学は「この問に必要な文章・図」がある問題（大問4など）も見る。
 4. 周回・苦手（回ごと・まとめて解く）・計算用紙・Claude解説・バックアップの書き出しと読み込みを一通り操作する。
-5. GitHub Pages は反映・キャッシュに数分かかることがある。
+5. みんなの学習状況を変えたときは、`tools/firebase-rules.json` と同じ決まりの模擬サーバーを手元で立て、`share.js` の `DB` をそこに向けたコピーで、作る・参加する・自動で送る・送り直し・抜けるを試す（本番のデータベースで試さない）。
+6. GitHub Pages は反映・キャッシュに数分かかることがある。

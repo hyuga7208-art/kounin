@@ -1,0 +1,19 @@
+{
+  "rules": {
+    "groups": {
+      "$group": {
+        ".read": "$group.matches(/^[a-km-np-z2-9]+$/) && $group.length == 10",
+        "$member": {
+          ".write": "$group.matches(/^[a-km-np-z2-9]+$/) && $group.length == 10 && $member.matches(/^[a-km-np-z2-9]+$/) && $member.length == 16",
+          ".validate": "newData.hasChildren(['name', 'updated'])",
+          "name": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
+          "updated": { ".validate": "newData.isNumber()" },
+          "math": { "$k": { ".validate": "newData.isNumber()" } },
+          "physics": { "$k": { ".validate": "newData.isNumber()" } },
+          "chemistry": { "$k": { ".validate": "newData.isNumber()" } },
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}
