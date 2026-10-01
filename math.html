@@ -439,7 +439,8 @@ function lapBlock(laps){
 }
 function renderLapAll(){
   const box = document.getElementById("lapAll"); if (!box) return;
-  const keys = YEARS.flatMap(y => y.keys);
+  // 全体の周回は過去問の回だけで数える（オリジナル問題の回 x-… は入れない）
+  const keys = YEARS.flatMap(y => y.keys).filter(k => !k.startsWith("x"));
   const counts = keys.map(k => lapsOf(S.exams[k]).length);
   const L = Math.min(...counts) + 1, cleared = counts.filter(c => c >= L).length;
   const full = keys.filter(k => lapsOf(S.exams[k]).some(l => l.score === l.max)).length;
@@ -1061,7 +1062,7 @@ initStore();
       mine = sel != null ? (CIRC[sel] || String(sel)) : "？";
     }
     const same = q.blanks ? !!sel && grade(q, sel).all : sel === q.ans;   // 採点と同じ判定（順不同も考える）
-    return `高卒認定試験「${SUBJ_NAME}」${where}の問題です（画像を添付しています）。\n正解：${right}\n私の答え：${mine}${same ? "（正解）" : ""}\n` +
+    return `${String(cur).startsWith("x") ? `高卒認定試験の「${SUBJ_NAME}」対策用のオリジナル問題（${where}）` : `高卒認定試験「${SUBJ_NAME}」${where}の問題`}です（画像を添付しています）。\n正解：${right}\n私の答え：${mine}${same ? "（正解）" : ""}\n` +
       (same ? "高校生にもわかるように、考え方と解き方を順番に解説してください。"
             : "高校生にもわかるように、考え方と解き方を順番に解説してください。私の答えのどこが違うのかも教えてください。");
   }
@@ -1161,9 +1162,9 @@ initStore();
   for (const id of ["mainBtn", "weakBtn"]){ const b = document.getElementById(id); if (b) b.addEventListener("click", redraw); }
   // 更新が反映されたか確認できるようにバージョンを表示
   const top = document.getElementById("top");
-  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-09-29 版11"; top.append(p); }
+  if (top){ const p = document.createElement("p"); p.className = "appver"; p.textContent = "アプリのバージョン：2026-10-01 版12"; top.append(p); }
 })();
 </script>
-<script src="share.js?v=11" data-subj="math"></script>
+<script src="share.js?v=12" data-subj="math"></script>
 </body>
 </html>

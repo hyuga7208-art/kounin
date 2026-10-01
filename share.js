@@ -9,7 +9,7 @@
   const DB = "https://kounin-5fbc8-default-rtdb.asia-southeast1.firebasedatabase.app/";   // 空のときは、この機能を出さない
   const KEY = "kounin-share-v1";   // この端末の参加情報 { code, id, name, dirty: [送れていない科目], day: { d, n, ok }, recent: [最近の解答] }
   const SUBJECTS = { math: ["数学", "kounin-math-all-v2"], physics: ["物理基礎", "kounin-physics-all-v1"], chemistry: ["化学基礎", "kounin-chemistry-all-v1"] };
-  const EXAMS = ["r7-1", "r7-2", "r6-1", "r6-2", "r5-1", "r5-2", "r4-1", "r4-2", "r3-1", "r3-2", "r2-1", "r2-2"], PER = 20;
+  const EXAMS = ["r7-1", "r7-2", "r6-1", "r6-2", "r5-1", "r5-2", "r4-1", "r4-2", "r3-1", "r3-2", "r2-1", "r2-2"], PER = 20;   // 過去問の回（要約はこの12回で数える）
   const LIVE = 150000;   // 最後の知らせからこれ以上たったら「いま解いています」を出さない（ミリ秒）
   const BEAT = 60000;    // 解いている間、この間隔で知らせ直す（ミリ秒）
   const ABC = "abcdefghijkmnpqrstuvwxyz23456789", CODE = /^[a-km-np-z2-9]{10}$/, ID = /^[a-km-np-z2-9]{16}$/;
@@ -45,10 +45,11 @@
              laps: counts.reduce((a, b) => a + b, 0), done, ok, weak, total: EXAMS.length * PER };
   }
   // 回ごとの結果：r = 問題ごとの○×（1 / 0。最後に解いたときの結果）、p = 周回の点数（新しい10周）、w = 苦手の数
+  // 要約（上の summary）は過去問の12回だけで数えるが、回ごとの結果はオリジナル問題の回（x-1 など）も送る
   function detail(subj){
     const ex = stored(subj), out = {};
-    for (const k of EXAMS){
-      const e = ex[k]; if (!e) continue;
+    for (const k of Object.keys(ex)){
+      const e = ex[k]; if (!e || !/^[a-z0-9-]{1,8}$/i.test(k)) continue;
       const r = {};
       for (const [id, v] of Object.entries(e.results || {})) if (/^[0-9a-z-]{1,8}$/i.test(id)) r[id] = v === "ok" ? 1 : 0;
       const p = lapsOf(e).map(l => l && +l.score).filter(Number.isFinite).slice(-10), w = Object.keys(e.weak || {}).length;
